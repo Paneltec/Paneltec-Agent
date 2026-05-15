@@ -1,0 +1,88 @@
+{
+  "project_name": "Paneltec Group Portal AI Search",
+  "theme": {
+    "mode": "light",
+    "archetype": "4 (Swiss & High-Contrast)",
+    "vibe": "Authority, Clarity, Truth. Enterprise-grade technical precision, refined Google/Perplexity experience."
+  },
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk",
+      "body": "IBM Plex Sans",
+      "monospace": "JetBrains Mono"
+    },
+    "rules": {
+      "headings": "Use tracking-tight for H1/H2. Never center by default. Left-align for editorial feel.",
+      "hierarchy": "H1: text-5xl to text-6xl for main hero search prompt. Body: text-base to text-lg. Monospace for metadata/stats.",
+      "import": "Import these fonts via Google Fonts (or Fontshare for Cabinet Grotesk) in index.css."
+    }
+  },
+  "colors": {
+    "background": {
+      "page": "#FFFFFF",
+      "surface": "#F8F8F8",
+      "surface_hover": "#F0F0F0"
+    },
+    "text": {
+      "primary": "#0A0A0A",
+      "secondary": "#666666",
+      "muted": "#A1A1AA"
+    },
+    "brand": {
+      "primary": "#002FA7",
+      "primary_hover": "#002480",
+      "accent": "#FF3B30",
+      "border": "#E5E5E5"
+    },
+    "rules": "No soft gradients. Use stark contrasts. 95% of UI should be monochrome, color exists only for data/action focus (e.g. International Klein Blue for AI highlights)."
+  },
+  "spacing_and_layout": {
+    "scale": "Generous spacing. Use p-6, p-8, p-12. Containers must have internal padding to avoid collision.",
+    "grids": {
+      "dashboard": "MODE B: The Control Room Grid (tight gaps gap-4, high density) for indexing dashboard.",
+      "search_results": "Single column editorial width (max-w-4xl) centered in screen, left-aligned text to mimic Perplexity focus."
+    },
+    "surfaces": "Grid Borders (The Technical Look). border-collapse style layouts with 1px borders, NO soft drop shadows. Sharp edges (rounded-none or max rounded-sm)."
+  },
+  "components": {
+    "search_hero": "Massive, screen-centered initially. On query, transitions smoothly to sticky header. Input: text-2xl or 3xl, pure white bg, 1px border, stark #002FA7 ring on focus. Minimalist icon.",
+    "ai_answer": "Cardless. Clean indented block. Left border 2px #002FA7. Include blinking cursor for loading/streaming state.",
+    "citations": "Superscript inline buttons [1], [2] referencing sources. Hovering shows a small, sharp tooltip with the file snippet.",
+    "filters": "Rectangular chips. Inactive: bg-transparent border-gray-200. Active: bg-black text-white.",
+    "indexing_dashboard": "Bento style. Use tabular numbers (JetBrains Mono). Sharp 1px borders. Display stats cleanly.",
+    "file_viewer": "IDE-like. JetBrains Mono for code. Syntax highlighting with high-contrast theme. Markdown text uses IBM Plex Sans.",
+    "navigation": "Clean, flat top bar. Logo on left, navigation on right. Solid background with a hard bottom border."
+  },
+  "motion_and_interactions": {
+    "hover": "Explicit text and bg color shifts. Sharp, fast transitions (duration-150).",
+    "page": "Use Framer Motion for the search bar transitioning from center to top header smoothly.",
+    "ai_loading": "Use a technical typing indicator or skeleton text, not a generic spinner."
+  },
+  "media_and_assets": {
+    "icons": "Install and use `@phosphor-icons/react` or `iconoir-react` for thin, technical line-work.",
+    "images": [
+      {
+        "url": "https://images.unsplash.com/photo-1579445505461-acecf2596190?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwzfHxtb2Rlcm4lMjBhYnN0cmFjdCUyMGFyY2hpdGVjdHVyZSUyMGdsYXNzfGVufDB8fHx8MTc3ODgzMzI2N3ww&ixlib=rb-4.1.0&q=85",
+        "description": "Architectural glass background. Use with heavy white overlay (bg-white/95) so it's just a very subtle structural texture behind the hero search.",
+        "category": "hero_background"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1745412298033-00614318e8d1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwyfHxtaW5pbWFsaXN0JTIwc2VydmVyJTIwcmFjayUyMHdoaXRlfGVufDB8fHx8MTc3ODgzMzI2N3ww&ixlib=rb-4.1.0&q=85",
+        "description": "Minimalist white server rack, use for 'Indexing...' or 'Empty Database' states in the dashboard.",
+        "category": "empty_state"
+      }
+    ]
+  },
+  "accessibility_and_testing": {
+    "testing": "All interactive and key informational elements MUST include a data-testid attribute in kebab-case based on their role.",
+    "contrast": "Ensure minimum 4.5:1 contrast for normal text against backgrounds."
+  },
+  "instructions_to_main_agent": [
+    "You are building for a React/Tailwind/Shadcn environment using .js files.",
+    "Do NOT use Inter, Roboto, or generic default fonts. Add Cabinet Grotesk, IBM Plex Sans, and JetBrains Mono via CDN/imports in the global css.",
+    "Focus on pure HTML/Tailwind for the structural layout. Use customized Shadcn for dropdowns, tooltips, dialogs.",
+    "Ensure 'data-testid' on all interactive parts.",
+    "Build the dashboard using pure CSS grid (or tailwind grid cols) without nesting excessive wrappers.",
+    "Implement the Perplexity-style AI Answer citation UI meticulously. High technical precision is required."
+  ]
+}
