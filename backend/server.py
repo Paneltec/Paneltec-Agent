@@ -540,17 +540,22 @@ async def ai_ask(req: AskReq):
         prior = list(reversed(prior))  # chronological
         if prior:
             lines = []
+            budget = 2400  # keep history under ~2.4k chars total
             for p in prior:
                 a = (p.get("answer") or "").strip()
-                # trim long answers
                 if len(a) > 400:
                     a = a[:400] + "…"
-                lines.append(f"Q: {p.get('query','')}\nA: {a}")
-            history_block = (
-                "Previous conversation (most recent last) — use only as context:\n"
-                + "\n\n".join(lines)
-                + "\n\n"
-            )
+                turn = f"Q: {p.get('query','')}\nA: {a}"
+                if budget - len(turn) < 0:
+                    break
+                lines.append(turn)
+                budget -= len(turn)
+            if lines:
+                history_block = (
+                    "Previous conversation (most recent last) — use only as context:\n"
+                    + "\n\n".join(lines)
+                    + "\n\n"
+                )
     except Exception as e:
         logger.warning("History fetch failed: %s", e)
 
@@ -909,7 +914,9 @@ async def ai_route(req: RouteReq):
 
     candidates = await _candidates_for_query(req.query, limit=12)
     if not candidates:
-        return RouteResp(query=req.query, portal_base_url=base, hits=[])
+        return RouteResp(
+            query=req.query, portal_base_url=base, hits=[], ranking_method="none"
+        )
 
     # Build prompt for Claude to rank
     rows = []
@@ -979,7 +986,10 @@ async def ai_route(req: RouteReq):
             ))
 
     return RouteResp(
-        query=req.query, portal_base_url=base, hits=hits, ranking_method=ranking_method
+        query=req.query,
+        portal_base_url=base,
+        hits=hits,
+        ranking_method=(ranking_method if hits else "none"),
     )
 
 

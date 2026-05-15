@@ -35,17 +35,20 @@
  */
 import { useEffect, useRef } from "react";
 
-const DEFAULT_SRC =
-  "https://6ca6db79-a5ea-44be-8fdd-0f68b6a9f102.preview.emergentagent.com/embed";
+const DEFAULT_SRC = ""; // Set via prop, env, or fall back to current origin
 
 export default function PaneltecAiSearch({
-  src = DEFAULT_SRC,
+  src,
   height = 720,
   maxWidth = 980,
   onNavigate,
   navigate, // react-router's useNavigate() result (optional)
   defaultQuery,
 }) {
+  const resolvedSrc =
+    src ||
+    process.env.REACT_APP_PANELTEC_AI_URL ||
+    (typeof window !== "undefined" ? `${window.location.origin}/embed` : "/embed");
   const iframeRef = useRef(null);
 
   useEffect(() => {
@@ -92,7 +95,7 @@ export default function PaneltecAiSearch({
       el.removeEventListener("load", send);
       clearTimeout(t);
     };
-  }, [defaultQuery, src]);
+  }, [defaultQuery, resolvedSrc]);
 
   const h = typeof height === "number" ? `${height}px` : height;
   const mw = typeof maxWidth === "number" ? `${maxWidth}px` : maxWidth;
@@ -104,7 +107,7 @@ export default function PaneltecAiSearch({
     >
       <iframe
         ref={iframeRef}
-        src={src}
+        src={resolvedSrc}
         title="Paneltec AI Search"
         allow="clipboard-write"
         style={{
