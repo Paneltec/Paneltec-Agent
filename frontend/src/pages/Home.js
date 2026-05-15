@@ -5,11 +5,14 @@ import { indexApi } from "../lib/api";
 import { Database, GitBranch, Layers, Sparkles } from "lucide-react";
 
 const SUGGESTIONS = [
-  "How do I onboard a new technician?",
-  "Where is the panel installation safety checklist?",
-  "List every app available in the portal",
-  "What does the warranty policy say about water damage?",
-  "Show me the API for the inventory app",
+  "What apps are available in the Paneltec portal?",
+  "How do I deploy the portal with Cloudflare Tunnel?",
+  "Explain the Equipment Finance Manager module",
+  "How does the Worksite Diary integrate with the portal?",
+  "What is the Viatec Whiteboard?",
+  "Show me how the Pulse AI Operations Centre works",
+  "Where are user credentials stored in My Apps?",
+  "How do I run a database backup for paneltec?",
 ];
 
 export default function Home() {
