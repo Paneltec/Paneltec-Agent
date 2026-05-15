@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import SearchBar from "../components/SearchBar";
 import AIAnswer from "../components/AIAnswer";
+import ActionCards from "../components/ActionCards";
 import ResultCard from "../components/ResultCard";
 import CategoryChips from "../components/CategoryChips";
 import { searchApi } from "../lib/api";
@@ -56,6 +57,7 @@ export default function SearchResults() {
 
       <div className="grid grid-cols-1 gap-12 lg:grid-cols-[1fr_360px]">
         <section className="min-w-0">
+          <ActionCards query={q} />
           <AIAnswer
             loading={aiLoading}
             answer={aiResp?.answer || ""}

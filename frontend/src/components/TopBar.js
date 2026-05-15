@@ -4,6 +4,7 @@ const NAV = [
   { to: "/", label: "Search", testId: "nav-search" },
   { to: "/library", label: "Library", testId: "nav-library" },
   { to: "/dashboard", label: "Indexing", testId: "nav-dashboard" },
+  { to: "/admin", label: "Admin", testId: "nav-admin" },
 ];
 
 export default function TopBar() {

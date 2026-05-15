@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 2 testing complete. Backend: 16/16 pytest pass — actions extract (39 routes mined), actions catalog list+filter, full CRUD on /api/actions, /api/settings GET+POST persist, /api/ai/route with Claude Sonnet 4.5 returns gate-pass for 'make a PIN for the gate' at 95% confidence, /weighbridge for 'open weighbridge' at 100%, and gracefully returns empty hits for gibberish. Regression on /api/, /api/index/stats, /api/search, /api/files/list, /api/ai/ask all clean. NO _id leakage anywhere. Frontend: /admin loads all 3 sections (settings, embed snippet w/ Copy, actions catalog); Save settings persists; Auto-Extract populates 39 rows; custom action add/filter/delete works; /search?q=make+a+PIN+for+the+gate shows ActionCard 'Gate Pass /gate-pass · 95%' with 'Jump to a Page · Intent Router' header (renders within ~5s); clicking action card opens new tab; /embed loads WITHOUT TopBar, accepts query 'open weighbridge', shows ActionCards (Weighbridge 100%) + AIAnswer; nav-admin link visible in TopBar on non-embed pages.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_paneltec_iter2.py",
+    "/app/backend/tests/test_paneltec_api.py",
+    "/app/test_reports/pytest/pytest_iter2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~960 lines — past the 700-line split threshold. Recommend splitting into modules: indexing, search/ask, actions/router, settings.",
+    "ROUTE_RE regex only matches React Router v6 syntax <Route ... element={<Component .../>}>. If repo migrates to data routers (createBrowserRouter) or lazy-loaded elements (element={<Suspense...>}), extraction will miss routes. Consider hardening regex or using an AST parser.",
+    "actions_extract() does delete_many({source: 'extracted'}) + insert_many — not atomic. If insert fails mid-way the catalog is left empty. Wrap in try/except with rollback or use a transaction.",
+    "/api/ai/route falls back to keyword-match candidates when Claude fails, but the LLM exception is swallowed at WARN level. Consider surfacing 'ranking_method' (llm|keyword) in the response so the UI can label fallback hits differently.",
+    "On the Admin page the iframe_origin input has placeholder 'iframe parent origin (or *)' but no explanation of accepted values; consider hint text. Minor UX nit, not blocking.",
+    "ActionCards.onOpen always treats window.parent !== window as iframe, but the search-results page isn't iframed in normal use. When portal_base_url is empty the card opens /gate-pass on the same origin which 404s — already shown by 'no portal base set' warning so this is by design, but worth documenting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_paneltec_iter2.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Not applicable — no auth in this app.",
+  "seed_data_creation": "Tests create TEST_-prefixed actions (path=/TEST_test-route and /TEST_ui-action) and delete them in the same run. Settings.portal_base_url is temporarily set then restored to original (empty) value. No persistent test data left behind.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 2 = AI launcher. 39 actions are extracted from App.js/Router files. /api/ai/route is non-deterministic (Claude Sonnet 4.5) but consistently returns /gate-pass for 'make a PIN for the gate' (95% confidence) and /weighbridge for 'open weighbridge' (100%). Use 45s timeout for /api/ai/route calls. portal_base_url is empty by default — that's expected. When clicking an ActionCard with base empty, it opens /<action.path> in a new tab on the same origin (which 404s); set portal_base_url first via /admin to test the happy path. TopBar is hidden ONLY on routes starting with /embed (App.js Chrome wrapper). Tests in /app/backend/tests/test_paneltec_iter2.py (16) and test_paneltec_api.py (15 from iter1) all pass against REACT_APP_BACKEND_URL.",
+  "rca_of_the_issue": "No bugs found. All iteration-2 features behave per spec."
+}

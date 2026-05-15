@@ -30,3 +30,19 @@ export const filesApi = {
     api.get("/files/list", { params: { category, q } }).then((r) => r.data),
   get: (id) => api.get(`/files/${id}`).then((r) => r.data),
 };
+
+export const actionsApi = {
+  list: (q = "", source = "all") =>
+    api.get("/actions", { params: { q, source } }).then((r) => r.data),
+  create: (a) => api.post("/actions", a).then((r) => r.data),
+  update: (id, a) => api.put(`/actions/${id}`, a).then((r) => r.data),
+  remove: (id) => api.delete(`/actions/${id}`).then((r) => r.data),
+  extract: () => api.post("/actions/extract").then((r) => r.data),
+  route: (query, limit = 3) =>
+    api.post("/ai/route", { query, limit }).then((r) => r.data),
+};
+
+export const settingsApi = {
+  get: () => api.get("/settings").then((r) => r.data),
+  update: (s) => api.post("/settings", s).then((r) => r.data),
+};

@@ -46,6 +46,8 @@ files_col = db.indexed_files
 chunks_col = db.indexed_chunks
 jobs_col = db.index_jobs
 conv_col = db.conversations
+actions_col = db.portal_actions
+settings_col = db.portal_settings
 
 # --- App --------------------------------------------------------------------
 app = FastAPI(title="Paneltec Group AI Search")
@@ -577,6 +579,352 @@ async def files_get(file_id: str):
     return d
 
 
+# ============================================================================
+# PORTAL ACTIONS — natural-language launcher for the Paneltec portal
+# ============================================================================
+class PortalAction(BaseModel):
+    id: str
+    path: str  # "/equipment-finance"
+    label: str  # human-readable
+    description: Optional[str] = ""
+    keywords: Optional[List[str]] = []
+    source: str = "custom"  # extracted | custom
+    source_file_id: Optional[str] = None
+    source_path: Optional[str] = None
+    created_at: str
+
+
+class PortalActionCreate(BaseModel):
+    path: str
+    label: str
+    description: Optional[str] = ""
+    keywords: Optional[List[str]] = []
+
+
+class PortalActionUpdate(BaseModel):
+    path: Optional[str] = None
+    label: Optional[str] = None
+    description: Optional[str] = None
+    keywords: Optional[List[str]] = None
+
+
+class RouteReq(BaseModel):
+    query: str
+    limit: int = 3
+
+
+class RouteHit(BaseModel):
+    id: str
+    path: str
+    label: str
+    description: str
+    confidence: float
+    reason: str
+
+
+class RouteResp(BaseModel):
+    query: str
+    portal_base_url: str
+    hits: List[RouteHit]
+
+
+class PortalSettings(BaseModel):
+    portal_base_url: str = ""
+    iframe_origin: str = "*"  # accepted parent origin for postMessage
+
+
+# --- Settings ---------------------------------------------------------------
+async def get_settings_doc() -> Dict[str, Any]:
+    d = await settings_col.find_one({"id": "main"}, {"_id": 0})
+    if not d:
+        d = {"id": "main", "portal_base_url": "", "iframe_origin": "*"}
+        await settings_col.insert_one(dict(d))
+    return d
+
+
+@api_router.get("/settings", response_model=PortalSettings)
+async def settings_get():
+    d = await get_settings_doc()
+    return PortalSettings(portal_base_url=d.get("portal_base_url", ""), iframe_origin=d.get("iframe_origin", "*"))
+
+
+@api_router.post("/settings", response_model=PortalSettings)
+async def settings_update(s: PortalSettings):
+    base = (s.portal_base_url or "").strip().rstrip("/")
+    origin = (s.iframe_origin or "*").strip()
+    await settings_col.update_one(
+        {"id": "main"},
+        {"$set": {"portal_base_url": base, "iframe_origin": origin}},
+        upsert=True,
+    )
+    return PortalSettings(portal_base_url=base, iframe_origin=origin)
+
+
+# --- Actions extraction -----------------------------------------------------
+ROUTE_RE = re.compile(
+    r"""<Route\s+[^>]*?path=["']([^"']+)["'][^>]*?element=\{<\s*(\w+)""",
+    re.VERBOSE,
+)
+TESTID_RE = re.compile(r'data-testid=["\']([a-z][a-z0-9-]*?)-page["\']')
+
+
+def humanize(component: str) -> str:
+    # split CamelCase into words
+    parts = re.findall(r"[A-Z][a-z0-9]+|[A-Z]+(?=[A-Z])", component)
+    return " ".join(parts) if parts else component
+
+
+GENERIC_COMPS = {
+    "ProtectedRoute", "PrivateRoute", "PublicRoute", "Outlet",
+    "Layout", "Suspense", "Fragment", "Navigate", "Redirect",
+    "RequireAuth", "AuthGuard", "Route",
+}
+
+
+def label_from_path(path: str) -> str:
+    p = path.strip("/").split("?")[0]
+    if not p:
+        return "Home"
+    last = p.split("/")[-1]
+    last = last.split(":")[0]  # strip route params
+    words = re.split(r"[-_]+", last)
+    words = [w for w in words if w and not w.startswith(":")]
+    if not words:
+        return path
+    return " ".join(w.capitalize() for w in words)
+
+
+def pick_label(component: str, path: str) -> str:
+    if component in GENERIC_COMPS:
+        return label_from_path(path)
+    h = humanize(component)
+    # If humanized form is short/cryptic, prefer the path-based label
+    if len(h) < 3:
+        return label_from_path(path)
+    return h
+
+
+def derive_keywords(label: str, path: str) -> List[str]:
+    raw = re.split(r"[\s/_\-]+", f"{label} {path}".lower())
+    return sorted({w for w in raw if len(w) > 2})
+
+
+@api_router.post("/actions/extract")
+async def actions_extract():
+    """Mine the indexed corpus for React Router routes and turn them into actions."""
+    # Look at App.js, App.jsx, *Router.js files
+    cursor = files_col.find(
+        {"$or": [
+            {"name": {"$regex": "^App\\.jsx?$"}},
+            {"name": {"$regex": "Router\\.jsx?$"}},
+            {"path": {"$regex": "routes\\.jsx?$"}},
+        ]},
+        {"_id": 0, "content": 1, "id": 1, "path": 1, "name": 1},
+    )
+    sources = await cursor.to_list(100)
+
+    found: Dict[str, Dict[str, Any]] = {}
+    for src in sources:
+        text = src.get("content", "") or ""
+        for m in ROUTE_RE.finditer(text):
+            path = m.group(1).strip()
+            comp = m.group(2).strip()
+            # skip catch-alls / params heuristics where path is empty or just '*' or just '/'
+            if not path or path == "*":
+                continue
+            # Skip pure routes like ":" or wildcard heavy
+            label = pick_label(comp, path)
+            key = path
+            if key in found:
+                continue
+            found[key] = {
+                "id": str(uuid.uuid4()),
+                "path": path if path.startswith("/") else f"/{path}",
+                "label": label or path,
+                "description": f"Open the {label} page in the Paneltec Group Portal.",
+                "keywords": derive_keywords(label, path),
+                "source": "extracted",
+                "source_file_id": src["id"],
+                "source_path": src["path"],
+                "created_at": now_iso(),
+            }
+
+    # Wipe extracted (keep custom) and insert fresh extracted
+    await actions_col.delete_many({"source": "extracted"})
+    if found:
+        await actions_col.insert_many(list(found.values()))
+
+    # Ensure text index for retrieval
+    try:
+        await actions_col.create_index(
+            [("label", "text"), ("description", "text"), ("path", "text"), ("keywords", "text")]
+        )
+    except Exception:
+        pass
+
+    return {"extracted": len(found), "from_files": len(sources)}
+
+
+@api_router.get("/actions")
+async def actions_list(q: Optional[str] = None, source: Optional[str] = None):
+    f: Dict[str, Any] = {}
+    if source and source != "all":
+        f["source"] = source
+    if q:
+        regex = re.compile(re.escape(q), re.IGNORECASE)
+        f["$or"] = [{"label": regex}, {"path": regex}, {"description": regex}]
+    cursor = actions_col.find(f, {"_id": 0}).sort("path", 1).limit(500)
+    items = await cursor.to_list(500)
+    return {"actions": items, "total": len(items)}
+
+
+@api_router.post("/actions", response_model=PortalAction)
+async def actions_create(a: PortalActionCreate):
+    path = a.path if a.path.startswith("/") else f"/{a.path}"
+    doc = {
+        "id": str(uuid.uuid4()),
+        "path": path,
+        "label": a.label,
+        "description": a.description or "",
+        "keywords": a.keywords or derive_keywords(a.label, path),
+        "source": "custom",
+        "source_file_id": None,
+        "source_path": None,
+        "created_at": now_iso(),
+    }
+    await actions_col.insert_one(dict(doc))
+    try:
+        await actions_col.create_index(
+            [("label", "text"), ("description", "text"), ("path", "text"), ("keywords", "text")]
+        )
+    except Exception:
+        pass
+    return PortalAction(**doc)
+
+
+@api_router.put("/actions/{action_id}", response_model=PortalAction)
+async def actions_update(action_id: str, u: PortalActionUpdate):
+    cur = await actions_col.find_one({"id": action_id}, {"_id": 0})
+    if not cur:
+        raise HTTPException(404, "Action not found")
+    upd = {k: v for k, v in u.model_dump().items() if v is not None}
+    if "path" in upd and not upd["path"].startswith("/"):
+        upd["path"] = "/" + upd["path"]
+    cur.update(upd)
+    await actions_col.update_one({"id": action_id}, {"$set": upd})
+    return PortalAction(**cur)
+
+
+@api_router.delete("/actions/{action_id}")
+async def actions_delete(action_id: str):
+    r = await actions_col.delete_one({"id": action_id})
+    return {"deleted": r.deleted_count}
+
+
+# --- AI Router (natural language → portal deep-link) ------------------------
+import json as _json
+
+
+async def _candidates_for_query(query: str, limit: int = 12) -> List[Dict[str, Any]]:
+    # Try text search first
+    try:
+        cursor = actions_col.find(
+            {"$text": {"$search": query}},
+            {"_id": 0, "score": {"$meta": "textScore"}},
+        ).sort([("score", {"$meta": "textScore"})]).limit(limit)
+        results = await cursor.to_list(limit)
+        if results:
+            return results
+    except Exception:
+        pass
+    # Fallback regex match
+    regex = re.compile("|".join(re.escape(t) for t in re.split(r"\W+", query) if len(t) > 1), re.IGNORECASE)
+    cursor = actions_col.find(
+        {"$or": [{"label": regex}, {"description": regex}, {"path": regex}, {"keywords": regex}]},
+        {"_id": 0},
+    ).limit(limit)
+    return await cursor.to_list(limit)
+
+
+@api_router.post("/ai/route", response_model=RouteResp)
+async def ai_route(req: RouteReq):
+    settings = await get_settings_doc()
+    base = settings.get("portal_base_url", "")
+
+    if not req.query or not req.query.strip():
+        return RouteResp(query=req.query or "", portal_base_url=base, hits=[])
+
+    candidates = await _candidates_for_query(req.query, limit=12)
+    if not candidates:
+        return RouteResp(query=req.query, portal_base_url=base, hits=[])
+
+    # Build prompt for Claude to rank
+    rows = []
+    for i, c in enumerate(candidates, start=1):
+        rows.append(
+            f"{i}. path={c['path']} | label={c['label']} | desc={c.get('description','')}"
+        )
+    candidate_text = "\n".join(rows)
+
+    system = (
+        "You are the Paneltec Group Portal's intent router. Given a user's natural-language "
+        "request and a list of candidate portal destinations (deep-links), pick the BEST 1 to 3 "
+        "destinations that the user most likely wants to open. "
+        "Output strictly valid JSON of the form: "
+        '{"hits":[{"n":<int>,"confidence":<0..1>,"reason":"<short why>"}]} '
+        "where n is the 1-based index of the candidate above. "
+        "If nothing fits well, return {\"hits\": []}. Never invent destinations not in the list."
+    )
+    user_text = (
+        f"User request: {req.query}\n\n"
+        f"Candidates:\n{candidate_text}\n\n"
+        f"Return JSON now."
+    )
+
+    hits: List[RouteHit] = []
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"router-{uuid.uuid4()}",
+            system_message=system,
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        raw = await chat.send_message(UserMessage(text=user_text))
+        if not isinstance(raw, str):
+            raw = str(raw)
+        # Extract JSON object
+        m = re.search(r"\{[\s\S]*\}", raw)
+        if m:
+            data = _json.loads(m.group(0))
+            for h in (data.get("hits") or [])[: req.limit]:
+                idx = int(h.get("n", 0)) - 1
+                if 0 <= idx < len(candidates):
+                    c = candidates[idx]
+                    hits.append(RouteHit(
+                        id=c["id"],
+                        path=c["path"],
+                        label=c["label"],
+                        description=c.get("description", ""),
+                        confidence=float(h.get("confidence", 0.5)),
+                        reason=str(h.get("reason", "")),
+                    ))
+    except Exception as e:
+        logger.warning("AI route ranking failed: %s", e)
+
+    # Fallback: if Claude returned nothing, pick top text-score candidates
+    if not hits:
+        for c in candidates[: req.limit]:
+            hits.append(RouteHit(
+                id=c["id"],
+                path=c["path"],
+                label=c["label"],
+                description=c.get("description", ""),
+                confidence=float(c.get("score", 0.5)) / 3.0 if c.get("score") else 0.4,
+                reason="keyword match",
+            ))
+
+    return RouteResp(query=req.query, portal_base_url=base, hits=hits)
+
+
 # --- Mount router & middleware ---------------------------------------------
 app.include_router(api_router)
 
@@ -594,6 +942,12 @@ async def on_startup():
     # Ensure text index exists if chunks already there
     try:
         await chunks_col.create_index([("content", "text"), ("name", "text"), ("path", "text")])
+    except Exception:
+        pass
+    try:
+        await actions_col.create_index(
+            [("label", "text"), ("description", "text"), ("path", "text"), ("keywords", "text")]
+        )
     except Exception:
         pass
 
