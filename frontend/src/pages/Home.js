@@ -8,10 +8,7 @@ const SUGGESTIONS = [
   "What apps are available in the Paneltec portal?",
   "How do I deploy the portal with Cloudflare Tunnel?",
   "Explain the Equipment Finance Manager module",
-  "How does the Worksite Diary integrate with the portal?",
-  "What is the Viatec Whiteboard?",
   "Show me how the Pulse AI Operations Centre works",
-  "Where are user credentials stored in My Apps?",
   "How do I run a database backup for paneltec?",
 ];
 
