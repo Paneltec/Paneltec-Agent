@@ -10,6 +10,7 @@ function buildHref(base, path) {
 export default function ActionCards({ query }) {
   const [hits, setHits] = useState([]);
   const [base, setBase] = useState("");
+  const [method, setMethod] = useState("llm");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,6 +24,7 @@ export default function ActionCards({ query }) {
         if (cancelled) return;
         setHits(r.hits || []);
         setBase(r.portal_base_url || "");
+        setMethod(r.ranking_method || "llm");
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -79,6 +81,21 @@ export default function ActionCards({ query }) {
         <Zap className="h-3.5 w-3.5 text-[var(--ptec-blue)]" />
         <span className="font-mono-ptec text-[10px] uppercase tracking-[0.22em] text-[var(--ptec-blue)]">
           Jump to a Page · Intent Router
+        </span>
+        <span
+          data-testid="ranking-method"
+          className={`font-mono-ptec border px-1.5 py-px text-[9px] uppercase tracking-wider ${
+            method === "llm"
+              ? "border-[var(--ptec-blue)] text-[var(--ptec-blue)]"
+              : "border-[var(--ptec-border)] text-[var(--ptec-text-muted)]"
+          }`}
+          title={
+            method === "llm"
+              ? "Ranked by Claude Sonnet 4.5"
+              : "Keyword fallback (LLM unavailable)"
+          }
+        >
+          {method === "llm" ? "AI-ranked" : "keyword"}
         </span>
         {!base && (
           <span

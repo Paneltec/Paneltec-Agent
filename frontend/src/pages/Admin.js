@@ -13,6 +13,7 @@ export default function Admin() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [newAction, setNewAction] = useState({ path: "", label: "", description: "" });
   const [copied, setCopied] = useState(false);
+  const [snippetTab, setSnippetTab] = useState("html");
 
   const loadAll = async () => {
     setLoading(true);
@@ -98,9 +99,38 @@ export default function Admin() {
     [embedUrl]
   );
 
+  const reactSnippet = useMemo(
+    () => `// 1) Save as: frontend/src/paneltec-ai-search/PaneltecAiSearch.jsx
+// 2) Use it on your Search page:
+import { useNavigate } from "react-router-dom";
+import PaneltecAiSearch from "./paneltec-ai-search/PaneltecAiSearch";
+
+export default function SearchPage() {
+  const navigate = useNavigate();
+  return (
+    <main style={{ padding: 24 }}>
+      <h1>Portal Search</h1>
+      <PaneltecAiSearch
+        src="${embedUrl}"
+        navigate={navigate}     // SPA routing for action cards
+        height={760}
+        // defaultQuery="make a PIN for the gate"
+      />
+    </main>
+  );
+}
+
+/* The component file itself is at:
+   /app/portal-integration/PaneltecAiSearch.jsx
+   Full integration guide: /app/portal-integration/README.md          */`,
+    [embedUrl]
+  );
+
+  const activeSnippet = snippetTab === "html" ? snippet : reactSnippet;
+
   const copySnippet = async () => {
     try {
-      await navigator.clipboard.writeText(snippet);
+      await navigator.clipboard.writeText(activeSnippet);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {}
@@ -155,25 +185,54 @@ export default function Admin() {
 
       {/* EMBED SNIPPET */}
       <section className="mt-8 border border-[var(--ptec-border)]">
-        <div className="flex items-center justify-between border-b border-[var(--ptec-border)] bg-[var(--ptec-surface)] px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--ptec-border)] bg-[var(--ptec-surface)] px-5 py-3">
           <span className="font-mono-ptec text-[11px] uppercase tracking-[0.18em] text-[var(--ptec-text-secondary)]">
             2 · Paste this into your Portal's search area
           </span>
-          <button
-            data-testid="copy-snippet-button"
-            onClick={copySnippet}
-            className="inline-flex items-center gap-1.5 border border-[var(--ptec-text)] px-3 py-1 font-mono-ptec text-[10px] uppercase tracking-[0.14em] text-[var(--ptec-text)] hover:bg-[var(--ptec-text)] hover:text-white"
-          >
-            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-            {copied ? "Copied" : "Copy"}
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center">
+              {[
+                { k: "html", label: "Vanilla HTML" },
+                { k: "react", label: "React" },
+              ].map((t) => (
+                <button
+                  key={t.k}
+                  data-testid={`snippet-tab-${t.k}`}
+                  onClick={() => setSnippetTab(t.k)}
+                  className={`border px-3 py-1 font-mono-ptec text-[10px] uppercase tracking-[0.14em] ${
+                    snippetTab === t.k
+                      ? "border-[var(--ptec-text)] bg-[var(--ptec-text)] text-white"
+                      : "border-[var(--ptec-border)] text-[var(--ptec-text-secondary)] hover:border-[var(--ptec-text)]"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <button
+              data-testid="copy-snippet-button"
+              onClick={copySnippet}
+              className="inline-flex items-center gap-1.5 border border-[var(--ptec-text)] px-3 py-1 font-mono-ptec text-[10px] uppercase tracking-[0.14em] text-[var(--ptec-text)] hover:bg-[var(--ptec-text)] hover:text-white"
+            >
+              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
         </div>
         <pre
           data-testid="embed-snippet"
-          className="overflow-auto bg-white p-5 font-mono-ptec text-[12px] leading-relaxed text-[var(--ptec-text)]"
+          className="max-h-[420px] overflow-auto bg-white p-5 font-mono-ptec text-[12px] leading-relaxed text-[var(--ptec-text)]"
         >
-{snippet}
+{activeSnippet}
         </pre>
+        {snippetTab === "react" && (
+          <div className="border-t border-[var(--ptec-border)] bg-[var(--ptec-surface)] px-5 py-3 text-xs text-[var(--ptec-text-secondary)]">
+            The component file <span className="font-mono-ptec text-[var(--ptec-text)]">PaneltecAiSearch.jsx</span>{" "}
+            lives at <span className="font-mono-ptec text-[var(--ptec-text)]">/app/portal-integration/</span>.
+            Copy it into <span className="font-mono-ptec text-[var(--ptec-text)]">frontend/src/paneltec-ai-search/</span> in your portal repo.
+            Full guide: <span className="font-mono-ptec text-[var(--ptec-text)]">/app/portal-integration/README.md</span>.
+          </div>
+        )}
       </section>
 
       {/* ACTIONS CATALOG */}

@@ -36,6 +36,27 @@ User clarifications:
 - All interactive elements have `data-testid` attributes
 - Backend + frontend tested end-to-end via testing agent (15/15 backend pytest pass, all UI flows pass)
 
+## Iteration 2 (2026-02) — Natural-language launcher
+- `POST /api/ai/route` — Claude Sonnet 4.5 maps natural-language queries to portal deep-links
+- Auto-extracted 39 actions from `App.js`/Router files in the indexed repo
+- New `/admin` page: portal base URL config, embed snippet generator, actions catalog CRUD, auto-extract button
+- New `/embed` route: minimal-chrome version for iframe embedding into the parent portal
+- `ActionCards` component appears above AI answers on `/search`
+- postMessage protocol: outbound `paneltec-navigate`, inbound `paneltec-query`
+- 16/16 backend pytest + all UI flows pass
+
+## Iteration 3 (2026-02) — Portal integration package + small wins
+- **Portal-ready React component** at `/app/portal-integration/PaneltecAiSearch.jsx`
+  with example usage + integration guide (`README.md`)
+- Admin page now offers **Vanilla HTML + React** snippet tabs (one-click copy)
+- `ranking_method` field on `/api/ai/route` response (`llm` | `keyword`) — shown
+  as a small AI-ranked / keyword badge on `ActionCards`
+- **Multi-turn chat memory** — `/api/ai/ask` now pulls the last 3 Q/A pairs for a
+  given `session_id` and includes them in the prompt. Verified: "How do I open it?"
+  correctly resolves "it" → weighbridge from the prior turn
+- **Atomic actions extraction** — stages new actions under `extracted_new`,
+  swaps in one shot. Catalog is never empty during re-extraction
+
 ## User Personas
 - **Paneltec staff** — wants to find an answer fast across manuals, apps, docs, code, ops runbooks
 - **Operations / IT** — re-runs the indexer when the repo changes
@@ -47,15 +68,17 @@ User clarifications:
 - Category filtering (manuals / apps / docs / code / other)
 - File viewer with query highlighting and link back to GitHub
 - Re-indexable on demand
+- **Natural-language launcher** — type an intent, jump to the right page in the portal
+- **Embeddable** into the existing Paneltec Group Portal via iframe or React component
 
 ## Prioritised Backlog
 ### P0 (next)
-- Embed-mode (`/embed`) route — minimal chrome, postMessage size events — for embedding inside the existing Paneltec portal as an iframe
 - Auto re-index on schedule (e.g. nightly cron) or via GitHub webhook
+- Stream AI answer (SSE) for faster perceived latency
 
 ### P1
-- Streaming AI answer (SSE) for faster perceived latency
-- Conversation memory (multi-turn follow-ups using `session_id`)
+- Split `server.py` into modules (`indexing`, `search`, `actions`, `settings`) — pure refactor, deferred to a dedicated test cycle
+- Deep-link templates per action (`/gate-pass?action=create&visitor={name}`) so a single sentence creates a record, not just navigates
 - Recently searched / popular queries panel
 - Markdown-aware rendering inside the file viewer (currently raw text)
 - Syntax highlighting for code files (Prism/Shiki)
@@ -66,9 +89,10 @@ User clarifications:
 - Vector embeddings (when available via Emergent integrations) for true semantic recall
 - Per-user search history & saved queries
 - Export answer to PDF / share link
+- "Top 10 questions this week" widget for the portal home (mines `conversations` collection)
 
 ## Next tasks list
-- Build `/embed` route + iframe-friendly CORS / styling
-- Add GitHub webhook endpoint to auto-trigger re-index on push
-- Add server-sent events for streaming AI answer
-- Wire up multi-turn chat history using the existing `conversations` collection
+- SSE streaming for `/api/ai/ask`
+- GitHub webhook endpoint to auto-trigger re-index on push
+- Modular split of `server.py`
+- Per-action deep-link template support (form pre-fill via query params)

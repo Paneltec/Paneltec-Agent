@@ -528,7 +528,34 @@ async def ai_ask(req: AskReq):
         "might look. Never invent facts."
     )
     context = "\n\n".join(context_parts)
+
+    # Multi-turn memory: pull last 3 turns from same session
+    history_block = ""
+    try:
+        prior_cursor = conv_col.find(
+            {"session_id": session_id},
+            {"_id": 0, "query": 1, "answer": 1, "created_at": 1},
+        ).sort("created_at", -1).limit(3)
+        prior = await prior_cursor.to_list(3)
+        prior = list(reversed(prior))  # chronological
+        if prior:
+            lines = []
+            for p in prior:
+                a = (p.get("answer") or "").strip()
+                # trim long answers
+                if len(a) > 400:
+                    a = a[:400] + "…"
+                lines.append(f"Q: {p.get('query','')}\nA: {a}")
+            history_block = (
+                "Previous conversation (most recent last) — use only as context:\n"
+                + "\n\n".join(lines)
+                + "\n\n"
+            )
+    except Exception as e:
+        logger.warning("History fetch failed: %s", e)
+
     user_text = (
+        f"{history_block}"
         f"Question: {req.query}\n\n"
         f"Sources (cite by number):\n{context}\n\n"
         f"Answer with inline [n] citations."
@@ -626,6 +653,7 @@ class RouteResp(BaseModel):
     query: str
     portal_base_url: str
     hits: List[RouteHit]
+    ranking_method: str = "llm"  # "llm" | "keyword" | "none"
 
 
 class PortalSettings(BaseModel):
@@ -711,8 +739,11 @@ def derive_keywords(label: str, path: str) -> List[str]:
 
 @api_router.post("/actions/extract")
 async def actions_extract():
-    """Mine the indexed corpus for React Router routes and turn them into actions."""
-    # Look at App.js, App.jsx, *Router.js files
+    """Mine the indexed corpus for React Router routes and turn them into actions.
+
+    Atomic-ish: stage new actions under source='extracted_new', then swap in one shot
+    so the catalog is never empty during re-extraction.
+    """
     cursor = files_col.find(
         {"$or": [
             {"name": {"$regex": "^App\\.jsx?$"}},
@@ -729,10 +760,8 @@ async def actions_extract():
         for m in ROUTE_RE.finditer(text):
             path = m.group(1).strip()
             comp = m.group(2).strip()
-            # skip catch-alls / params heuristics where path is empty or just '*' or just '/'
             if not path or path == "*":
                 continue
-            # Skip pure routes like ":" or wildcard heavy
             label = pick_label(comp, path)
             key = path
             if key in found:
@@ -743,18 +772,42 @@ async def actions_extract():
                 "label": label or path,
                 "description": f"Open the {label} page in the Paneltec Group Portal.",
                 "keywords": derive_keywords(label, path),
-                "source": "extracted",
+                "source": "extracted_new",  # staged
                 "source_file_id": src["id"],
                 "source_path": src["path"],
                 "created_at": now_iso(),
             }
 
-    # Wipe extracted (keep custom) and insert fresh extracted
-    await actions_col.delete_many({"source": "extracted"})
-    if found:
-        await actions_col.insert_many(list(found.values()))
+    # Clean any leftover stage from a previous failed run
+    try:
+        await actions_col.delete_many({"source": "extracted_new"})
+    except Exception as e:
+        logger.warning("Stage cleanup failed: %s", e)
 
-    # Ensure text index for retrieval
+    inserted_ok = False
+    if found:
+        try:
+            await actions_col.insert_many(list(found.values()))
+            inserted_ok = True
+        except Exception as e:
+            logger.exception("Stage insert failed: %s", e)
+            # Drop any partials and bail without touching live catalog
+            await actions_col.delete_many({"source": "extracted_new"})
+            raise HTTPException(500, f"Action extraction failed: {e}")
+
+    # Swap: delete old 'extracted' then promote 'extracted_new' → 'extracted'
+    if inserted_ok or not found:
+        try:
+            await actions_col.delete_many({"source": "extracted"})
+            if inserted_ok:
+                await actions_col.update_many(
+                    {"source": "extracted_new"},
+                    {"$set": {"source": "extracted"}},
+                )
+        except Exception as e:
+            logger.exception("Promotion failed: %s", e)
+            raise HTTPException(500, f"Action promotion failed: {e}")
+
     try:
         await actions_col.create_index(
             [("label", "text"), ("description", "text"), ("path", "text"), ("keywords", "text")]
@@ -882,6 +935,7 @@ async def ai_route(req: RouteReq):
     )
 
     hits: List[RouteHit] = []
+    ranking_method = "llm"
     try:
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
@@ -909,9 +963,11 @@ async def ai_route(req: RouteReq):
                     ))
     except Exception as e:
         logger.warning("AI route ranking failed: %s", e)
+        ranking_method = "keyword"
 
     # Fallback: if Claude returned nothing, pick top text-score candidates
     if not hits:
+        ranking_method = "keyword"
         for c in candidates[: req.limit]:
             hits.append(RouteHit(
                 id=c["id"],
@@ -922,7 +978,9 @@ async def ai_route(req: RouteReq):
                 reason="keyword match",
             ))
 
-    return RouteResp(query=req.query, portal_base_url=base, hits=hits)
+    return RouteResp(
+        query=req.query, portal_base_url=base, hits=hits, ranking_method=ranking_method
+    )
 
 
 # --- Mount router & middleware ---------------------------------------------

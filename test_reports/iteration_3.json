@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 3 testing complete. Backend: 45/45 pytest pass (15 iter1 + 16 iter2 + 14 new iter3). New verified: (1) /api/ai/route now returns ranking_method='llm' on normal queries; (2) /api/ai/ask multi-turn chat memory works — Turn 1 'What is the weighbridge app?' returns weigh*; Turn 2 'How do I open it?' with same session_id correctly references 'weighbridge' proving prior context resolved the pronoun; (3) /api/actions/extract called 3x in a row never leaves the catalog empty — staging via source='extracted_new' then swap works and no extracted_new rows leak; (4) Regression OK across /api/, /api/index/stats, /api/search, /api/files/list, /api/files/{id}, /api/actions CRUD, /api/settings, /api/ai/ask, /api/ai/route. (5) No _id leakage anywhere. Frontend: /admin loads with snippet-tab-html (default = vanilla iframe snippet) and snippet-tab-react (PaneltecAiSearch + useNavigate); Copy button visible. /search?q=make+a+PIN+for+the+gate renders ActionCard 'Gate Pass /gate-pass 95%' with the new ranking-method badge 'AI-RANKED' visible, AI answer + citations rendered. /search?q=weighbridge similarly shows Weighbridge /weighbridge 100% AI-RANKED. /library, /dashboard, /embed (no TopBar) all render correctly; file detail links /file/:id present. Portal integration files exist and are non-empty: PaneltecAiSearch.jsx (120 lines, 3.7KB), README.md (162 lines, 4.8KB), example-usage.jsx (42 lines, 1.5KB). portal_base_url left empty as required.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_paneltec_iter3.py",
+    "/app/backend/tests/test_paneltec_iter2.py",
+    "/app/backend/tests/test_paneltec_api.py",
+    "/app/test_reports/pytest/pytest_iter3.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~1016 lines — still well past the 700-line split threshold. Recommend splitting into modules (indexing, search/ask, actions, router, settings) before next major change.",
+    "actions_extract atomicity: the design (stage as 'extracted_new', insert_many, delete old 'extracted', rename) is good. However the delete+rename is two sequential operations (not a transaction) — so a millisecond window exists where the catalog could be empty. For true atomicity wrap in a MongoDB multi-document transaction or use a separate 'active_revision' pointer. Acceptable in this single-instance app, but worth documenting.",
+    "AI route ranking_method='llm' is hardcoded as default at line 938; only switched to 'keyword' on exception. If LLM returns malformed/empty output and we silently fall through with empty hits, the response still says ranking_method='llm' (test_route_empty_query proved this returns 'llm' even with no hits). Consider setting ranking_method='none' when hits is empty regardless of why.",
+    "Chat-memory implementation fetches last 3 turns from conv_col by session_id — fine, but there's no token-budget guard. A session with very long prior answers could blow past the Claude context. Add a max-character cap when assembling the history prompt.",
+    "Portal-integration package: DEFAULT_SRC in PaneltecAiSearch.jsx hardcodes the preview deployment URL (https://6ca6db79-...preview.emergentagent.com/embed). Recommend taking this from a prop default of '' and forcing the consumer to set it, or read from an env var, so users do not accidentally embed the dev preview in production.",
+    "/admin React snippet imports 'PaneltecAiSearch' from a relative path — README should call out that the file must be saved alongside the component; consider also publishing as an npm package long-term.",
+    "On Admin page the empty portal_base_url is allowed to save without warning — user is then surprised when /search action cards open same-origin URLs that 404. Consider a soft validation hint when blank."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_paneltec_iter3.py (new — 14 tests)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Not applicable — no auth in this app.",
+  "seed_data_creation": "iter3 tests create a TEST_iter3 action (/TEST_iter3) and delete it in the same run. Settings round-trip restores portal_base_url to its prior empty value. Actions catalog is re-extracted 3x but ends at the same 39-action steady state. No persistent test data left behind.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 3 added (a) ranking_method field on /api/ai/route, (b) multi-turn chat memory on /api/ai/ask (last 3 turns pulled from conv_col by session_id), (c) atomic actions_extract via 'extracted_new' staging swap, and (d) /app/portal-integration package + a Vanilla HTML / React snippet toggle on /admin. All 45 pytest tests in /app/backend/tests pass against REACT_APP_BACKEND_URL with a 60s per-AI-call timeout. The chat-memory check is the most fragile — verify Turn 2 answer to 'How do I open it?' (with session_id from Turn 1) contains 'weigh'. portal_base_url is and should stay empty. Actions catalog stable at 39 entries. Frontend: snippet-tab-html / snippet-tab-react testids on /admin; ranking-method testid badge inside ActionCards.",
+  "rca_of_the_issue": "No bugs found. One transient failure observed on first run of the combined suite was due to an empty actions catalog at the start (a previous run had left the DB without an 'extracted' source set yet); re-running after a single extract triggered all 45 tests to pass deterministically. This is a test-ordering observation, not a product bug."
+}
